@@ -4,7 +4,6 @@ import com.elfmcys.yesstevemodel.YSMMod
 import com.elfmcys.yesstevemodel.model.RegisteredModel
 import com.elfmcys.yesstevemodel.model.YSMModelManager
 import com.mojang.blaze3d.vertex.PoseStack
-import com.mojang.math.Axis
 import net.minecraft.client.model.HumanoidModel
 import net.minecraft.client.player.AbstractClientPlayer
 import net.minecraft.client.renderer.MultiBufferSource
@@ -48,30 +47,32 @@ object YSMRenderBridge {
     ) {
         val animatable = YSMPlayerAnimatable
         val geoModel = YSMPlayerGeoRenderer.geoModel
-        val texture = geoModel.getTextureResource(animatable)
         val baked = geoModel.getBakedModel(geoModel.getModelResource(animatable)) ?: return
 
-        // 1. Animation handling — we keep an AnimationState alive even though no controllers
-        //    are registered yet, so GeckoLib's molang queries (player_*, body_part_*) tick.
+        // 1. Animation handling — keep AnimationState alive even with no controllers, so
+        //    GeckoLib's molang queries tick.
         val instanceId = player.id.toLong()
         val animationState = AnimationState<YSMPlayerAnimatable>(animatable, 0f, 0f, partialTick, false)
         geoModel.handleAnimations(animatable, instanceId, animationState)
 
-        // 2. Bone mirror — pose state from vanilla flows through.
+        // 2. Bone mirror — pose state from vanilla HumanoidModel flows through.
         HumanoidBoneMirror.apply(vanillaModel, baked)
 
-        // 3. Render. The vanilla LivingEntityRenderer has already applied entity yaw/pitch
-        //    pose stack rotations; we just need the player-model y-flip that vanilla render
-        //    bakes into the matrix before model.renderToBuffer.
-        poseStack.pushPose()
-        poseStack.mulPose(Axis.XP.rotationDegrees(180f))
-        poseStack.translate(0f, -1.5f, 0f)
-        val renderType = geoModel.getRenderType(animatable, texture)
-        val buffer = bufferSource.getBuffer(renderType)
+        // 3. Render.
+        //
+        // The poseStack we receive is *already* set up by LivingEntityRenderer.render at
+        // the same orientation that vanilla model.renderToBuffer would consume:
+        //   - scale(-1,-1,1) (Bedrock-format flip)
+        //   - translate(0,-1.5,0) (entity foot-pivot to model-pivot lift)
+        // applied just before the renderToBuffer call site that we're redirecting. Don't
+        // re-apply them here, or the model renders upside-down / off-position.
+        //
+        // defaultRender internally calls actuallyRender (the bone-recursive draw) and
+        // handles texture/renderType/packedOverlay lookup if we pass nulls.
         YSMPlayerGeoRenderer.defaultRender(
-            poseStack, animatable, bufferSource, renderType, buffer, 0f, partialTick, packedLight
+            poseStack, animatable, bufferSource, /*renderType*/ null, /*buffer*/ null,
+            0f, partialTick, packedLight
         )
-        poseStack.popPose()
     }
 
     // Exposed only so the model can be looked up by other phases; null-able.
