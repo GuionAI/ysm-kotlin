@@ -26,8 +26,11 @@ object YSMRenderBridge {
     fun shouldReplace(@Suppress("UNUSED_PARAMETER") player: AbstractClientPlayer): Boolean = activeModel != null
 
     fun onModelsReloaded() {
-        // Phase-2 hardcoded selection: pick whichever builtin loaded first.
-        activeModel = YSMModelManager.all.firstOrNull()
+        // Phase-2 hardcoded selection: prefer wine_fox_new_year to verify the renderer
+        // generalizes beyond the first model; fall back to whatever the registry has.
+        // Phase 5 (GUI selector) replaces this with per-player capability storage.
+        val preferred = "wine_fox_new_year"
+        activeModel = YSMModelManager.get(preferred) ?: YSMModelManager.all.firstOrNull()
         activeModel?.let { YSMMod.LOGGER.info("YSM active model = {}", it.id) }
     }
 

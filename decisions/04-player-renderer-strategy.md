@@ -4,6 +4,7 @@
 
 **Update log:**
 - 2026-04-29 — R1 verified false by reading playerAnimator's bytecode; no priority conflict on `Model.renderToBuffer`. R5 added (GeckoLib helper-renderer ergonomics). Phase 2 acceptance milestone made explicit.
+- 2026-04-29 — Phase 2 milestone 1 PASSED in dev runClient. Logged R6 (bone-mirror swing direction).
 
 ## What's the problem?
 
@@ -164,6 +165,38 @@ This is added to Phase 4's verification checklist (see `tasks/phase-4-model-reso
 
 After our redirect substitutes the body draw, the layers loop runs on the *vanilla* `HumanoidModel` poses. Armor, elytra, and item-in-hand will render in normal-Steve proportions on top of a possibly-smaller bedrock body. This is visually wrong but functionally correct (the player is still wearing the armor; HUD updates; damage reduction applies). See [05-armor-deferred.md](05-armor-deferred.md).
 
+### R6: Bone-mirror swing direction is wrong in third-person view
+
+User-observed in milestone-1 verification (2026-04-29): when left-clicking to swing the
+arm, the wrong arm visibly swings AND it swings in the wrong direction. First-person view
+is fine; third-person back/front views show the bug.
+
+The bone mirror copies vanilla `ModelPart.xRot/yRot/zRot` directly to the matching
+GeckoLib `GeoBone.setRotX/Y/Z`. Two known problem axes:
+
+1. **Left/right naming convention.** Vanilla `rightArm` is positioned at the model's local
+   `+X`; vanilla's `scale(-1, -1, 1)` mirrors it to world `-X` so it visually appears on
+   the player's actual right side. Bedrock `RightArm` is similarly authored at `+X` (we
+   verified by reading the model). With our bedrock-friendly `scale(1,-1,1)` post-fix
+   (X-flip via vanilla's `-1` plus our Y-only reflection), the same mirror happens — so
+   in principle vanilla's `rightArm.xRot` → bedrock's `RightArm.setRotX` should be
+   correct. But the visual output disagrees. Likely: an additional convention difference
+   (e.g. bedrock's xRot direction is opposite of vanilla's, or the bones don't share a
+   pivot orientation).
+
+2. **Sign of rotation.** Reflections (X-flip) reverse rotation direction around the
+   non-flipped axes. So a vanilla `xRot = +0.5` means "rotate forward around the X axis
+   in vanilla's flipped space", but for bedrock with its own axis convention the same
+   numeric value may produce the opposite swing.
+
+**Plan:** deferred to Phase 3 alongside the rest of the bone-mirror polish (body
+rotation, full quaternion composition for nested bones). In the meantime, the swing-arm
+bug is cosmetic, doesn't crash anything, doesn't block the architecture validation.
+
+The fix likely takes the form: per-bone mapping in `HumanoidBoneMirror` that may invert
+sign or swap which vanilla bone feeds which bedrock bone. Worth empirical iteration in a
+runClient session, not pure derivation.
+
 ### R5: GeckoLib helper-renderer ergonomics
 
 The plan calls for using `GeoReplacedEntityRenderer` as an internal helper inside our mixin. Its constructor signature `(EntityRendererProvider.Context, GeoModel<T>, T)` requires a valid `Context` — typically obtained during `EntityRenderersEvent.RegisterRenderers`. Driving it from inside a redirect handler bypasses its normal construction path; we'll need to either capture a Context at startup (via the entity-renderer-register event) or skip `GeoReplacedEntityRenderer` entirely and use GeckoLib's lower-level primitives directly:
@@ -184,6 +217,19 @@ Phase 2 is "done" when the following runs without errors in the live `落幕曲 
 If both pass, Phase 2 is locked in and Phase 3+ can build on top. If milestone 2 fails, we have a debugging session to identify whether the bone mirror's bone-name lookup, transform copying, or render-order assumptions are wrong — but the architecture itself is salvageable.
 
 If milestone 1 fails (no model renders, stack trace, etc.), the architecture is in question and we re-evaluate.
+
+### Status (2026-04-29)
+
+**Milestone 1 PASSED** in dev runClient. The bedrock player model from `wine_fox_new_year` renders in place of Steve, right-side up, facing the correct direction, with the correct texture and reasonable proportions. First-person view works without artifacts.
+
+**Milestone 2 deferred** — full TACZ-modpack integration test postponed pending Phase 3 (the `R6` swing-direction issue makes a clean compat test premature). The architecture is validated; the modpack test becomes a *combined* milestone-2-plus-Phase-6 acceptance after the bone mirror is properly polished.
+
+Five fixes were necessary between architecture-locked and milestone-1-pass, all in `tasks/phase-2`'s code:
+1. Mixin `@At` target had to be `EntityModel.renderToBuffer`, not `Model.renderToBuffer` — the bytecode call site is on the more-specific declaring class.
+2. `ResourceManager.listResources` first arg is a path-prefix (not a namespace).
+3. GeckoLib's `GeckoLibCache` only scans `assets/<ns>/geo/...` and `assets/<ns>/animations/...`. The model files had to be relocated from the YSM-natural `builtin/<id>/models/...` to those required path prefixes.
+4. Pose-stack transform between vanilla's setup and bedrock-canonical setup is a Y reflection (`scale(1, -1, 1)` + re-translate), NOT an X-axis 180° rotation (which adds an unwanted Z-flip and faces the model backward).
+5. `defaultRender` does its own renderType + buffer construction when passed nulls — leveraging that gives the right texture binding without us having to mirror GeckoLib's internal logic.
 
 ## What does this mean later?
 
