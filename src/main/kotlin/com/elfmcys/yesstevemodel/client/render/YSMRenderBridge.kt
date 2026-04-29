@@ -4,6 +4,7 @@ import com.elfmcys.yesstevemodel.YSMMod
 import com.elfmcys.yesstevemodel.model.RegisteredModel
 import com.elfmcys.yesstevemodel.model.YSMModelManager
 import com.mojang.blaze3d.vertex.PoseStack
+import com.mojang.math.Axis
 import net.minecraft.client.model.HumanoidModel
 import net.minecraft.client.player.AbstractClientPlayer
 import net.minecraft.client.renderer.MultiBufferSource
@@ -60,18 +61,18 @@ object YSMRenderBridge {
 
         // 3. Render.
         //
-        // The poseStack arrives with vanilla LivingEntityRenderer's prep already applied:
-        //     scale(-1, -1, 1) ; translate(0, -1.5, 0)
-        // That's right for vanilla HumanoidModel (Y-down convention). But Blockbench-
-        // authored Bedrock models are Y-up, and GeckoLib's renderer wants:
-        //     scale(-1,  1, 1) ; translate(0, -1.5, 0)
-        // The delta is "un-flip Y, but the translate(0,-1.5,0) was applied in flipped-Y
-        // space, so we need to un-translate around the Y-flip":
+        // Restoration of the v1 transform (verified visually correct by user):
+        //   - Rx(180°): rotates 180° around the X axis. Effect on the existing pose stack
+        //     (scale(-1,-1,1) + translate(0,-1.5,0)) is to put the bedrock model right-side
+        //     up AND face the right direction. Equivalent to a Y-flip + Z-flip combined.
+        //   - translate(0, -1.5, 0): adjusts model lift to put feet at entity foot.
+        //
+        // Mathematically: vanilla's scale(-1,-1,1) is X+Y flip; bedrock needs X+Z flip
+        // (Blockbench's +Z is "front" but MC entity space's -Z is "front"). The delta from
+        // (X-flip, Y-flip) to (X-flip, Z-flip) is (Y-flip, Z-flip) = Rx(180°).
         poseStack.pushPose()
-        poseStack.translate(0f, 1.5f, 0f)
-        poseStack.scale(1f, -1f, 1f)
+        poseStack.mulPose(Axis.XP.rotationDegrees(180f))
         poseStack.translate(0f, -1.5f, 0f)
-
         YSMPlayerGeoRenderer.defaultRender(
             poseStack, animatable, bufferSource, /*renderType*/ null, /*buffer*/ null,
             0f, partialTick, packedLight
