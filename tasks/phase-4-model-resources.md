@@ -94,4 +94,5 @@ Python script to:
 - [ ] All ysm.json files parse correctly
 - [ ] GeckoLib 4 can load any extracted model's geo.json
 - [ ] All 84+ skin textures are valid PNG files
+- [ ] **Bone-name convention check**: grep top-level bone names in every `models/main.json` and confirm they all use `head` / `body` / `rightArm` / `leftArm` / `rightLeg` / `leftLeg` (canonical Bedrock player bone names). Any deviation requires a `boneAliases` table per model (see `decisions/04-player-renderer-strategy.md` R3). One-liner: `for f in builtin/*/models/main.json builtin/*/*/models/main.json; do jq -r '.["minecraft:geometry"][0].bones[] | select(.parent == null) | .name' "$f"; done | sort | uniq -c`
 - [ ] Animation files parse correctly

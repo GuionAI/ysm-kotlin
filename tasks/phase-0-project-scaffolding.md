@@ -69,6 +69,16 @@ ysm-kotlin/
 - GeckoLib 4 Installation: https://github.com/bernie-g/geckolib/wiki/Installation-(Geckolib4)
 - GeckoLib 4 Examples: https://github.com/bernie-g/geckolib-examples
 
+## Errata: corrections discovered during implementation
+
+The following points in this task file were wrong or incomplete. The actual working build (committed `feat(phase-0)` + `fix(phase-0)`) reflects the corrections; full reasoning lives in [`decisions/02-build-stack.md`](../decisions/02-build-stack.md):
+
+- **Kotlin Gradle plugin: 2.2.21, not 1.9.22.** KFF 4.12 ships kotlin-stdlib 2.2.21 (metadata 2.2.0); the 1.9.22 plugin can't read it.
+- **GeckoLib maven URL is `geckolib3/geckolib/maven/`, not `geckolib/geckolib/maven/`.** The Cloudsmith repo path uses `geckolib3` historically and hosts both v3 and v4 jars.
+- **`com.eliotlash.mclib:mclib:20` is a required side-dep on 1.20.1**, even though the wiki phrases it as optional.
+- **Do NOT add the `org.spongepowered.mixin` gradle plugin in Phase 0.** It deadlocks the kotlin plugin with a circular `addMixinsToJar → compileTestKotlin → jar` task graph. Phase 2 will solve this when it actually authors mixins. GeckoLib 4 ships its own mixin config inside its jar; consumers don't need the plugin to use GeckoLib.
+- **JDK 17 is required** (this Mac defaults to 25 via Homebrew). Set `JAVA_HOME=/opt/homebrew/opt/openjdk@17` for every gradle invocation.
+
 ## Verification
 - [ ] `./gradlew build` succeeds with no errors
 - [ ] Mod appears in Forge mod list when launched

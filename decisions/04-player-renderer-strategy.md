@@ -2,6 +2,9 @@
 
 **Status:** Locked. This is the single most consequential decision in the project.
 
+**Update log:**
+- 2026-04-29 — R1 verified false by reading playerAnimator's bytecode; no priority conflict on `Model.renderToBuffer`. R5 added (GeckoLib helper-renderer ergonomics). Phase 2 acceptance milestone made explicit.
+
 ## What's the problem?
 
 Replace the visual appearance of the Minecraft player with custom 3D models, *without* breaking any of the other mods in the target modpack that animate the player.
@@ -131,25 +134,56 @@ Anything *more* than these six bones (custom ears, tails, decorative bones) is n
 
 ## Risks and unknowns
 
-### R1: Mixin priority conflict with playerAnimator
+### R1: ~~Mixin priority conflict with playerAnimator~~ — verified non-issue (2026-04-29)
 
-PlayerAnimator's `LivingEntityRenderRedirect_bendOnly` redirects on the same `Model.renderToBuffer` call. Mixin allows only **one** `@Redirect` per call site. Whichever has higher `@Mixin(priority = ...)` wins; the other is silently dropped.
+Original concern: that playerAnimator's `LivingEntityRenderRedirect_bendOnly` and our mixin would both `@Redirect` `Model.renderToBuffer`, and Mixin only allows one redirect per call site.
 
-**Plan:** start with our mixin at `priority = 800` (lower than the default 1000) so playerAnimator wins on conflict and our redirect doesn't apply. If that means our redirect doesn't fire at all (which it would, if priority works the way I read it), switch to `@Inject(at = "INVOKE", target = ..., cancellable = true)` — multiple `@Inject`s coexist freely.
+**Verified false by reading playerAnimator's actual bytecode** (`player-animation-lib-forge-1.0.2-rc1+1.20.jar`). PlayerAnimator's mixins on `LivingEntityRenderer.render` target two completely different call sites:
 
-This is the **only architecturally significant unknown** that needs in-game verification, not API research.
+| Mixin handler | Target |
+|---|---|
+| `LivingEntityRenderRedirect_bendOnly.initialPush` | `@Inject(at=INVOKE)` on `List.iterator()` (start of layers loop) |
+| `LivingEntityRenderRedirect_bendOnly` redirect | `@Redirect` on `Iterator.next()` inside layers loop |
+| `PlayerRendererMixin.applyBodyTransforms` etc. | `@Inject` on the `super.render()` call inside `PlayerRenderer.render` |
+
+**Nothing in playerAnimator redirects `Model.renderToBuffer`.** Our redirect on that call site is uncontested. No priority configuration needed.
 
 ### R2: SpongePowered Mixin gradle plugin + Kotlin plugin circular-dep
 
 Phase 0 hit it; we deferred. Phase 2 has to solve it. Estimated 30–60 min.
 
-### R3: Bone-name assumption
+### R3: Bone-name assumption needs cross-model verification
 
-The six conventional names are assumed across all builtin models. An author who names a bone `Head` (capital H) or `arm_right` would silently no-op and leave that limb in T-pose. Verifiable by inspecting `models/main.json` of any one builtin before writing code.
+The six conventional names (`head`, `body`, `rightArm`, `leftArm`, `rightLeg`, `leftLeg`) are assumed across all 19 builtin models. An author who named a bone `Head` (capital H) or `arm_right` would silently no-op and leave that limb in T-pose.
+
+**Verification step before writing the bone mirror:** extract `models/main.json` from each of the 19 builtins (Phase 4 territory), grep for top-level bone names, confirm the convention. If any model deviates, the mirror needs a per-model alias table — adds a `boneAliases: Map<String, String>` field to the registry.
+
+This is added to Phase 4's verification checklist (see `tasks/phase-4-model-resources.md` → Verification).
 
 ### R4: Layers render in vanilla shape on top of bedrock model
 
 After our redirect substitutes the body draw, the layers loop runs on the *vanilla* `HumanoidModel` poses. Armor, elytra, and item-in-hand will render in normal-Steve proportions on top of a possibly-smaller bedrock body. This is visually wrong but functionally correct (the player is still wearing the armor; HUD updates; damage reduction applies). See [05-armor-deferred.md](05-armor-deferred.md).
+
+### R5: GeckoLib helper-renderer ergonomics
+
+The plan calls for using `GeoReplacedEntityRenderer` as an internal helper inside our mixin. Its constructor signature `(EntityRendererProvider.Context, GeoModel<T>, T)` requires a valid `Context` — typically obtained during `EntityRenderersEvent.RegisterRenderers`. Driving it from inside a redirect handler bypasses its normal construction path; we'll need to either capture a Context at startup (via the entity-renderer-register event) or skip `GeoReplacedEntityRenderer` entirely and use GeckoLib's lower-level primitives directly:
+
+- `GeckoLibCache.getBakedModels().get(location)` → `BakedGeoModel`
+- `model.handleAnimations(animatable, instanceId, animationState)` to compute pose state
+- Walk `bakedModel.topLevelBones()` and call `GeoRenderer.renderRecursively(...)` per bone
+
+**Plan:** at the start of Phase 2 implementation, spend ~30 min validating which of the two paths actually compiles and runs. If `GeoReplacedEntityRenderer` works as a helper, use it. If not, fall through to the lower-level API. Either way the rest of the architecture is unchanged — this is an implementation-detail choice, not an architectural one.
+
+## Phase 2 acceptance milestone (go/no-go)
+
+Phase 2 is "done" when the following runs without errors in the live `落幕曲 1.6.3` modpack instance:
+
+1. **Vanilla replacement works** — drop one builtin YSM model into the resources, hardcode it as the active model, launch the modpack. The local player renders as the bedrock model instead of Steve.
+2. **Pose plumbing works** — equip a TACZ gun. Right-click to aim. The bedrock arm raises into the aim pose. (This proves the bone mirror reads playerAnimator-mutated `ModelPart` state correctly.)
+
+If both pass, Phase 2 is locked in and Phase 3+ can build on top. If milestone 2 fails, we have a debugging session to identify whether the bone mirror's bone-name lookup, transform copying, or render-order assumptions are wrong — but the architecture itself is salvageable.
+
+If milestone 1 fails (no model renders, stack trace, etc.), the architecture is in question and we re-evaluate.
 
 ## What does this mean later?
 
