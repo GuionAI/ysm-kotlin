@@ -10,6 +10,7 @@ plugins {
     id 'idea'
     id 'net.minecraftforge.gradle' version '[6.0,6.2)'
     id 'org.jetbrains.kotlin.jvm' version '2.2.21'
+    id 'org.jetbrains.kotlin.plugin.serialization' version '2.2.21'
 }
 
 // NOTE: 'org.spongepowered.mixin' plugin is added in Phase 2 when we author
@@ -77,6 +78,16 @@ dependencies {
 
     implementation fg.deobf("software.bernie.geckolib:geckolib-forge-${project.minecraft_version}:${project.geckolib_version}")
     implementation 'com.eliotlash.mclib:mclib:20'
+
+    // kotlinx-serialization-json comes bundled with KFF 4.12; plugin generates code that uses it.
+    // Tests
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
 }
 
 tasks.withType(JavaCompile).configureEach {
