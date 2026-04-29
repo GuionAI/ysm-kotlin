@@ -4,7 +4,6 @@ import com.elfmcys.yesstevemodel.YSMMod
 import com.elfmcys.yesstevemodel.model.RegisteredModel
 import com.elfmcys.yesstevemodel.model.YSMModelManager
 import com.mojang.blaze3d.vertex.PoseStack
-import com.mojang.math.Axis
 import net.minecraft.client.model.HumanoidModel
 import net.minecraft.client.player.AbstractClientPlayer
 import net.minecraft.client.renderer.MultiBufferSource
@@ -61,17 +60,21 @@ object YSMRenderBridge {
 
         // 3. Render.
         //
-        // Restoration of the v1 transform (verified visually correct by user):
-        //   - Rx(180°): rotates 180° around the X axis. Effect on the existing pose stack
-        //     (scale(-1,-1,1) + translate(0,-1.5,0)) is to put the bedrock model right-side
-        //     up AND face the right direction. Equivalent to a Y-flip + Z-flip combined.
-        //   - translate(0, -1.5, 0): adjusts model lift to put feet at entity foot.
+        // Vanilla LivingEntityRenderer applied scale(-1,-1,1) + translate(0,-1.5,0) before
+        // model.renderToBuffer (the call we redirect). That's right for vanilla
+        // HumanoidModel (which is X+Y flipped relative to world). For Blockbench-authored
+        // bedrock models, the canonical setup is scale(-1, 1, 1) + translate(0,-1.5,0)
+        // (X-flip only, no Y-flip). The delta we apply: a Y reflection (`scale(1,-1,1)`)
+        // that un-does the Y-flip but does NOT touch Z — earlier we used Rx(180) here,
+        // which inadvertently flipped Z too and ended up rendering the model facing the
+        // wrong direction (W press would visually look like the character walking
+        // backwards in third-person view). After the reflection we re-translate -1.5 to
+        // restore foot-on-ground (the original translate was applied in the now-undone
+        // flipped frame).
         //
-        // Mathematically: vanilla's scale(-1,-1,1) is X+Y flip; bedrock needs X+Z flip
-        // (Blockbench's +Z is "front" but MC entity space's -Z is "front"). The delta from
-        // (X-flip, Y-flip) to (X-flip, Z-flip) is (Y-flip, Z-flip) = Rx(180°).
+        // Net effect: local (x,y,z) -> world (-x, y, z) — X mirror only.
         poseStack.pushPose()
-        poseStack.mulPose(Axis.XP.rotationDegrees(180f))
+        poseStack.scale(1f, -1f, 1f)
         poseStack.translate(0f, -1.5f, 0f)
         YSMPlayerGeoRenderer.defaultRender(
             poseStack, animatable, bufferSource, /*renderType*/ null, /*buffer*/ null,
