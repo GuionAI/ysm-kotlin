@@ -3,8 +3,8 @@ package com.elfmcys.yesstevemodel.mixin;
 import com.elfmcys.yesstevemodel.client.render.YSMRenderBridge;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.client.model.EntityModel;
 import net.minecraft.client.model.HumanoidModel;
-import net.minecraft.client.model.Model;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.entity.LivingEntityRenderer;
@@ -31,12 +31,12 @@ public abstract class LivingEntityRendererMixin {
         method = "render(Lnet/minecraft/world/entity/LivingEntity;FFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V",
         at = @At(
             value = "INVOKE",
-            target = "Lnet/minecraft/client/model/Model;renderToBuffer(Lcom/mojang/blaze3d/vertex/PoseStack;Lcom/mojang/blaze3d/vertex/VertexConsumer;IIFFFF)V"
+            target = "Lnet/minecraft/client/model/EntityModel;renderToBuffer(Lcom/mojang/blaze3d/vertex/PoseStack;Lcom/mojang/blaze3d/vertex/VertexConsumer;IIFFFF)V"
         )
     )
     private void ysm$replaceBodyDraw(
-        // Redirected method args:
-        Model model, PoseStack poseStack, VertexConsumer buffer,
+        // Redirected method args (receiver type matches the call site's declared class):
+        EntityModel<?> model, PoseStack poseStack, VertexConsumer buffer,
         int packedLight, int packedOverlay, float r, float g, float b, float a,
         // Outer-method args, captured by trailing position:
         LivingEntity entity, float entityYaw, float partialTick,

@@ -37,8 +37,11 @@ object YSMModelManager {
      */
     fun reload(resourceManager: ResourceManager) {
         val discovered = LinkedHashMap<String, RegisteredModel>()
-        val resources = resourceManager.listResources(YSMMod.MOD_ID) { path ->
-            path.path.startsWith(BUILTIN_PREFIX) && path.path.endsWith("/$META_FILENAME")
+        // listResources(pathPrefix, predicate) — pathPrefix scopes the scan, predicate filters
+        // by full ResourceLocation (namespace + path). We restrict to our namespace and to the
+        // ysm.json filename.
+        val resources = resourceManager.listResources(BUILTIN_PREFIX.trimEnd('/')) { location ->
+            location.namespace == YSMMod.MOD_ID && location.path.endsWith("/$META_FILENAME")
         }
         for ((location, resource) in resources) {
             val id = idFromMetaLocation(location) ?: continue
