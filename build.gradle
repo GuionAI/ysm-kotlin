@@ -1,6 +1,7 @@
 buildscript {
     repositories {
         maven { url = 'https://maven.minecraftforge.net/' }
+        maven { url = 'https://repo.spongepowered.org/repository/maven-public/' }
         mavenCentral()
     }
 }
@@ -9,13 +10,15 @@ plugins {
     id 'eclipse'
     id 'idea'
     id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+    id 'org.spongepowered.mixin' version '0.7.+'
     id 'org.jetbrains.kotlin.jvm' version '2.2.21'
     id 'org.jetbrains.kotlin.plugin.serialization' version '2.2.21'
 }
 
-// NOTE: 'org.spongepowered.mixin' plugin is added in Phase 2 when we author
-// our own PlayerRenderer mixin. GeckoLib 4 ships its own mixin config inside
-// the jar and does not require this plugin in consumer projects.
+mixin {
+    add sourceSets.main, "${project.mod_id}.refmap.json"
+    config "mixins.${project.mod_id}.json"
+}
 
 version = project.mod_version
 group = project.mod_group
@@ -78,6 +81,9 @@ dependencies {
 
     implementation fg.deobf("software.bernie.geckolib:geckolib-forge-${project.minecraft_version}:${project.geckolib_version}")
     implementation 'com.eliotlash.mclib:mclib:20'
+
+    // Mixin AP runs at compile time to generate the refmap; the runtime is supplied by Forge.
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
 
     // kotlinx-serialization-json comes bundled with KFF 4.12; plugin generates code that uses it.
     // Tests

@@ -41,3 +41,6 @@ mandatory=true
 versionRange="[4.4,)"
 ordering="AFTER"
 side="BOTH"
+
+[[mixins]]
+config="mixins.yesstevemodel.json"

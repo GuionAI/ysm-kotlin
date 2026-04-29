@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.elfmcys.yesstevemodel.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "yesstevemodel.refmap.json",
+  "client": [
+    "LivingEntityRendererMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
