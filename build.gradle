@@ -1,7 +1,6 @@
 buildscript {
     repositories {
         maven { url = 'https://maven.minecraftforge.net/' }
-        maven { url = 'https://repo.spongepowered.org/repository/maven-public/' }
         mavenCentral()
     }
 }
@@ -10,9 +9,12 @@ plugins {
     id 'eclipse'
     id 'idea'
     id 'net.minecraftforge.gradle' version '[6.0,6.2)'
-    id 'org.spongepowered.mixin' version '0.7.+'
-    id 'org.jetbrains.kotlin.jvm' version '1.9.22'
+    id 'org.jetbrains.kotlin.jvm' version '2.2.21'
 }
+
+// NOTE: 'org.spongepowered.mixin' plugin is added in Phase 2 when we author
+// our own PlayerRenderer mixin. GeckoLib 4 ships its own mixin config inside
+// the jar and does not require this plugin in consumer projects.
 
 version = project.mod_version
 group = project.mod_group
