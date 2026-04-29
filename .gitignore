@@ -1,0 +1,33 @@
+# Build artifacts
+build/
+out/
+.gradle/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+
+# Forge / MinecraftForge
+run/
+runs/
+forge*.jar
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Generated mappings
+src/generated/
+
+# Local config
+local.properties
+*.local.properties
