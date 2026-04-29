@@ -60,19 +60,23 @@ object YSMRenderBridge {
 
         // 3. Render.
         //
-        // The poseStack we receive is *already* set up by LivingEntityRenderer.render at
-        // the same orientation that vanilla model.renderToBuffer would consume:
-        //   - scale(-1,-1,1) (Bedrock-format flip)
-        //   - translate(0,-1.5,0) (entity foot-pivot to model-pivot lift)
-        // applied just before the renderToBuffer call site that we're redirecting. Don't
-        // re-apply them here, or the model renders upside-down / off-position.
-        //
-        // defaultRender internally calls actuallyRender (the bone-recursive draw) and
-        // handles texture/renderType/packedOverlay lookup if we pass nulls.
+        // The poseStack arrives with vanilla LivingEntityRenderer's prep already applied:
+        //     scale(-1, -1, 1) ; translate(0, -1.5, 0)
+        // That's right for vanilla HumanoidModel (Y-down convention). But Blockbench-
+        // authored Bedrock models are Y-up, and GeckoLib's renderer wants:
+        //     scale(-1,  1, 1) ; translate(0, -1.5, 0)
+        // The delta is "un-flip Y, but the translate(0,-1.5,0) was applied in flipped-Y
+        // space, so we need to un-translate around the Y-flip":
+        poseStack.pushPose()
+        poseStack.translate(0f, 1.5f, 0f)
+        poseStack.scale(1f, -1f, 1f)
+        poseStack.translate(0f, -1.5f, 0f)
+
         YSMPlayerGeoRenderer.defaultRender(
             poseStack, animatable, bufferSource, /*renderType*/ null, /*buffer*/ null,
             0f, partialTick, packedLight
         )
+        poseStack.popPose()
     }
 
     // Exposed only so the model can be looked up by other phases; null-able.
