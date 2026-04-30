@@ -40,7 +40,12 @@ object YSMPlayerAnimatable : SingletonGeoAnimatable {
     private val IDLE_KEYS = arrayOf("idle")
     private val WALK_KEYS = arrayOf("walk")
     private val RUN_KEYS = arrayOf("run")
-    private val SNEAK_KEYS = arrayOf("sneaking", "sneak")
+    /** Static crouch pose (idle while sneaking). YSM convention: `sneaking` is the static
+     *  hold-on-last-frame pose; fallback to `sneak` if model only has one. */
+    private val SNEAK_IDLE_KEYS = arrayOf("sneaking", "sneak")
+    /** Walking while crouched (legs cycling through a sneak step). YSM convention: `sneak`
+     *  is the looping walk-cycle, fallback to `sneaking` if model only has one. */
+    private val SNEAK_WALK_KEYS = arrayOf("sneak", "sneaking")
     private val JUMP_KEYS = arrayOf("jump")
     private val SWIM_KEYS = arrayOf("swim", "swim_stand")
     private val SWIM_STAND_KEYS = arrayOf("swim_stand", "swim")
@@ -84,7 +89,7 @@ object YSMPlayerAnimatable : SingletonGeoAnimatable {
         // horizontal velocity is zero during a vertical jump.
         if (!player.onGround()) return loop(JUMP_KEYS)
         return when {
-            player.isShiftKeyDown -> loop(SNEAK_KEYS)
+            player.isShiftKeyDown -> if (isMoving) loop(SNEAK_WALK_KEYS) else loop(SNEAK_IDLE_KEYS)
             !isMoving -> loop(IDLE_KEYS)
             player.isSprinting -> loop(RUN_KEYS)
             else -> loop(WALK_KEYS)
