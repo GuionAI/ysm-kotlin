@@ -7,6 +7,9 @@
   "client": [
     "LivingEntityRendererMixin"
   ],
+  "mixins": [
+    "MolangParserMixin"
+  ],
   "injectors": {
     "defaultRequire": 1
   }
