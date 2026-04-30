@@ -1,36 +1,124 @@
 package com.elfmcys.yesstevemodel.client.render
 
+import com.elfmcys.yesstevemodel.model.YSMResources
+import net.minecraft.client.player.AbstractClientPlayer
 import software.bernie.geckolib.animatable.SingletonGeoAnimatable
+import software.bernie.geckolib.cache.GeckoLibCache
 import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache
 import software.bernie.geckolib.core.animation.AnimatableManager
+import software.bernie.geckolib.core.animation.AnimationController
+import software.bernie.geckolib.core.animation.RawAnimation
+import software.bernie.geckolib.core.`object`.PlayState
 import software.bernie.geckolib.util.GeckoLibUtil
 import software.bernie.geckolib.util.RenderUtils
 
 /**
- * GeckoLib needs a `GeoAnimatable` to attach animation state to. Player isn't one and we
- * can't make it one without invasive bytecode surgery, so we wrap: a single shared
- * instance handed to GeckoLib whenever a player draws.
+ * GeckoLib's animation engine wants a `GeoAnimatable` instance to attach state to. Player
+ * isn't one, and we can't make it implement the interface without invasive surgery, so we
+ * keep a single wrapper instance that the renderer hands to GeckoLib whenever a player
+ * draws.
  *
- * **Phase 6 architecture: bone mirror as primary animation source.** Movement animations
- * (idle/walk/run/sneak/swim/jump/attack) are NOT driven by GeckoLib here. Instead, vanilla
- * `LivingEntityRenderer.render` calls `HumanoidModel.setupAnim` first (which is where
- * playerAnimator/TACZ/SlashBlade mixins fire and mutate `ModelPart` rotations), and our
- * `HumanoidBoneMirror` copies the final post-mutation `HumanoidModel` state onto bedrock
- * bones. This gives us automatic compatibility with every mod that animates the player by
- * mutating `HumanoidModel` — no per-mod integration needed.
+ * The current rendering player is stashed on [YSMRenderBridge.currentPlayer] before
+ * `handleAnimations` runs so the controller's state handler can read player state without
+ * the AnimationState surface having to carry it.
  *
- * No animation controllers are registered. YSM-specific extras (dance, wave, GUI poses)
- * will get a separate controller in Phase 5/7 when the GUI selector lands and triggers
- * them by keybind. Those play *over* the bone mirror for bones the bone mirror doesn't
- * touch (decorative bones — cape, hat, ribbons, ears).
+ * Animations are looked up by key in the active model's `main.animation.json`. Standard
+ * keys observed across the 19 ysm-2.6.x builtins: `idle`, `walk`, `run`, `sneak`,
+ * `swim`, `swim_stand`, `jump`, `fly`, `elytra_fly`, `attacked`, `sit`, `sleep`. Each
+ * model authors slightly different content under each key but the key set is consistent.
  */
 object YSMPlayerAnimatable : SingletonGeoAnimatable {
     private val cache: AnimatableInstanceCache = GeckoLibUtil.createInstanceCache(this)
 
+    /**
+     * For each abstract state, the candidate animation key names to try in order. The first
+     * one present in the active model's main.animation.json is used. The fallback chain
+     * covers naming variation across YSM models — e.g. some models ship `swim` (horizontal
+     * swim pose), some ship `swim_stand` (treading-water vertical pose), and a few have
+     * both. We prefer the more specific names first and degrade toward IDLE.
+     */
+    private val IDLE_KEYS = arrayOf("idle")
+    private val WALK_KEYS = arrayOf("walk")
+    private val RUN_KEYS = arrayOf("run")
+    /** Static crouch pose (idle while sneaking). YSM convention: `sneaking` is the static
+     *  hold-on-last-frame pose; fallback to `sneak` if model only has one. */
+    private val SNEAK_IDLE_KEYS = arrayOf("sneaking", "sneak")
+    /** Walking while crouched (legs cycling through a sneak step). YSM convention: `sneak`
+     *  is the looping walk-cycle, fallback to `sneaking` if model only has one. */
+    private val SNEAK_WALK_KEYS = arrayOf("sneak", "sneaking")
+    private val JUMP_KEYS = arrayOf("jump")
+    private val SWIM_KEYS = arrayOf("swim", "swim_stand")
+    private val SWIM_STAND_KEYS = arrayOf("swim_stand", "swim")
+    private val FLY_KEYS = arrayOf("elytra_fly", "fly")
+    /** Played briefly while [LivingEntity.swinging] is true — left-click attack. YSM
+     *  authors typically name this `attacked` (past-tense convention); some use `attack`. */
+    private val ATTACK_KEYS = arrayOf("attacked", "attack", "swing")
+
     override fun registerControllers(controllers: AnimatableManager.ControllerRegistrar) {
-        // Intentionally empty. Phase 5/7 may add controllers for YSM-specific extras
-        // (dance/wave/etc.) that don't have a vanilla equivalent. Movement animations
-        // come from the bone mirror via vanilla setupAnim, not from here.
+        controllers.add(
+            AnimationController<YSMPlayerAnimatable>(
+                this, "main", /*transitionLengthTicks*/ 5
+            ) { state ->
+                state.setAndContinue(pickAnimation(state.isMoving))
+                PlayState.CONTINUE
+            }
+        )
+    }
+
+    /**
+     * Returns the [RawAnimation] that best matches the current rendering player's state.
+     *
+     * Falls back to "idle" if no player is set (e.g. preview rendering, or a frame where
+     * the bridge hasn't populated `currentPlayer` yet). All decisions read live state from
+     * the same [AbstractClientPlayer] the renderer is drawing — no copy, so transitions
+     * happen on the same tick the player input fires.
+     *
+     * Per-state animation keys are looked up via [firstAvailable] which queries the model's
+     * actual loaded animation set; this lets a model with only `swim_stand` (no `swim`)
+     * still play a swim animation when the player is swimming.
+     */
+    private fun pickAnimation(isMoving: Boolean): RawAnimation {
+        val player: AbstractClientPlayer = YSMRenderBridge.currentPlayer ?: return loop(IDLE_KEYS)
+        // Attack overrides everything — while swinging is true (~6 ticks per swing), the
+        // arm-swing animation plays. As soon as the swing ends it falls back to whatever
+        // the movement state would normally be. Single-controller architecture means we
+        // can't OVERLAY attack on walk/run; we just substitute the whole pose for ~6 ticks.
+        // Phase 6 may add a second controller for proper additive overlay.
+        if (player.swinging) return loop(ATTACK_KEYS)
+        if (player.isFallFlying) return loop(FLY_KEYS)
+        if (player.isInWater && !player.onGround()) {
+            return if (isMoving || player.isSwimming) loop(SWIM_KEYS) else loop(SWIM_STAND_KEYS)
+        }
+        // Airborne-on-land takes priority over ground states. Without this above the
+        // !isMoving branch, jumping in place would fall through to IDLE because
+        // horizontal velocity is zero during a vertical jump.
+        if (!player.onGround()) return loop(JUMP_KEYS)
+        return when {
+            player.isShiftKeyDown -> if (isMoving) loop(SNEAK_WALK_KEYS) else loop(SNEAK_IDLE_KEYS)
+            !isMoving -> loop(IDLE_KEYS)
+            player.isSprinting -> loop(RUN_KEYS)
+            else -> loop(WALK_KEYS)
+        }
+    }
+
+    /** Builds a `RawAnimation` for the first key in [candidates] that the active model declares. */
+    private fun loop(candidates: Array<String>): RawAnimation =
+        RawAnimation.begin().thenLoop(firstAvailable(candidates) ?: candidates[0])
+
+    /**
+     * Returns the first animation name in [candidates] that exists in the active model's
+     * main.animation.json. Returns null only if none of them exist (the model hasn't loaded
+     * yet, or the animation file failed to parse). Caller should pass `candidates[0]` as
+     * fallback in that case.
+     */
+    private fun firstAvailable(candidates: Array<String>): String? {
+        val model = YSMRenderBridge.activeModel ?: return null
+        val animationFile = YSMResources.animation(model, "main") ?: return null
+        val baked = GeckoLibCache.getBakedAnimations()[animationFile] ?: return null
+        for (name in candidates) {
+            if (baked.animations()[name] != null) return name
+        }
+        return null
     }
 
     override fun getAnimatableInstanceCache(): AnimatableInstanceCache = cache
