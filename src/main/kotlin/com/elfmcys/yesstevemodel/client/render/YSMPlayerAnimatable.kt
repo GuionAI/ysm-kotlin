@@ -79,10 +79,13 @@ object YSMPlayerAnimatable : SingletonGeoAnimatable {
         if (player.isInWater && !player.onGround()) {
             return if (isMoving || player.isSwimming) loop(SWIM_KEYS) else loop(SWIM_STAND_KEYS)
         }
+        // Airborne-on-land takes priority over ground states. Without this above the
+        // !isMoving branch, jumping in place would fall through to IDLE because
+        // horizontal velocity is zero during a vertical jump.
+        if (!player.onGround()) return loop(JUMP_KEYS)
         return when {
             player.isShiftKeyDown -> loop(SNEAK_KEYS)
             !isMoving -> loop(IDLE_KEYS)
-            !player.onGround() -> loop(JUMP_KEYS)
             player.isSprinting -> loop(RUN_KEYS)
             else -> loop(WALK_KEYS)
         }
