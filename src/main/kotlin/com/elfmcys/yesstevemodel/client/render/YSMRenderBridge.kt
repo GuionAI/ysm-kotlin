@@ -55,7 +55,7 @@ object YSMRenderBridge {
      */
     fun renderGeo(
         player: AbstractClientPlayer,
-        @Suppress("UNUSED_PARAMETER") vanillaModel: HumanoidModel<out LivingEntity>,
+        vanillaModel: HumanoidModel<out LivingEntity>,
         partialTick: Float,
         poseStack: PoseStack,
         bufferSource: MultiBufferSource,
@@ -63,35 +63,44 @@ object YSMRenderBridge {
     ) {
         val animatable = YSMPlayerAnimatable
         val geoModel = YSMPlayerGeoRenderer.geoModel
-        // Resolve the model up front so we can bail cleanly if the cache hasn't loaded it.
-        if (geoModel.getBakedModel(geoModel.getModelResource(animatable)) == null) return
+        val baked = geoModel.getBakedModel(geoModel.getModelResource(animatable)) ?: return
 
         // 1. Animation handling.
         //
-        // Phase 3 path: GeckoLib's animation engine drives bone poses by playing an
-        // animation keyed by the controller (idle/walk/run/sneak/etc.). The previous
-        // bone-mirror approach (copying vanilla HumanoidModel.ModelPart rotations onto
-        // bedrock GeoBones) is disabled — it had cosmetic axis bugs (R6 in decisions/04)
-        // and its primary value (TACZ/SlashBlade compat) is recovered later in Phase 6.
+        // Phase 6 architecture: GeckoLib's controllers do NOT drive movement animations.
+        // The animation pipeline is two-stage:
         //
-        // limbSwing/limbSwingAmount come from the player's WalkAnimationState; isMoving
-        // = limbSwingAmount > tiny threshold. The controller reads the player from
-        // [currentPlayer] (stashed below) to decide which key to play.
+        //   a) Stage 1 (this call): GeckoLib processes any registered controllers,
+        //      ticking molang queries and applying their poses to bones. Currently
+        //      registerControllers is empty so this is a no-op for movement, but it
+        //      will host YSM extras (dance/wave) in Phase 5+.
+        //
+        //   b) Stage 2 (HumanoidBoneMirror.apply): copies the post-setupAnim
+        //      HumanoidModel.ModelPart rotations onto matching bedrock bones. Because
+        //      vanilla LivingEntityRenderer already called setupAnim before our
+        //      redirect fired, that ModelPart state already includes:
+        //        - vanilla idle/walk/run/sneak/swim/jump pose
+        //        - playerAnimator track-based emote poses
+        //        - TACZ aim / SlashBlade swing pose mutations
+        //      All of which propagate to the bedrock model for free.
+        //
+        // Mirror runs AFTER the GeckoLib pass so it has the final word on the 5 mirrored
+        // bones. Decorative bones (cape, hat, ribbons, ears) are untouched by the mirror
+        // and still respect any GeckoLib animation playing on them.
         currentPlayer = player
         try {
             val instanceId = player.id.toLong()
             val limbSwing = player.walkAnimation.position(partialTick)
             val limbSwingAmount = player.walkAnimation.speed(partialTick)
-            // Use horizontal velocity rather than walkAnimation.speed for the moving check:
-            // walkAnimation.speed decays asymptotically and stays > 0 long after the player
-            // has actually stopped, leaving the controller stuck on WALK. Velocity goes to 0
-            // immediately when the player releases movement keys.
             val velSqr = player.deltaMovement.horizontalDistanceSqr()
-            val isMoving = velSqr > 0.001 // ~0.03 blocks/tick, below normal walk speed
+            val isMoving = velSqr > 0.001
             val animationState = AnimationState<YSMPlayerAnimatable>(
                 animatable, limbSwing, limbSwingAmount, partialTick, isMoving
             )
             geoModel.handleAnimations(animatable, instanceId, animationState)
+
+            // Stage 2: bone mirror — vanilla pose flows into bedrock bones.
+            HumanoidBoneMirror.apply(vanillaModel, baked)
         } finally {
             currentPlayer = null
         }
