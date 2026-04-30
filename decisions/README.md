@@ -18,6 +18,7 @@ Each note answers four questions:
 | 04 | [Player renderer strategy](04-player-renderer-strategy.md) | Mixin into `LivingEntityRenderer.render`, don't replace `PlayerRenderer`. The big one. |
 | 05 | [Armor deferred to Phase 7](05-armor-deferred.md) | Functional vs cosmetic — armor visuals are wrong-but-working, ship later |
 | 06 | [ysm.json schema realities](06-ysm-json-schema.md) | What the real spec-2 format actually looks like vs the simplified plan |
+| 07 | [Animation architecture](07-animation-architecture.md) | YSM fidelity vs vanilla-pose compat — the dual-source problem and 5 options |
 
 ## Status conventions
 
