@@ -38,10 +38,10 @@ object YSMRenderBridge {
     fun shouldReplace(@Suppress("UNUSED_PARAMETER") player: AbstractClientPlayer): Boolean = activeModel != null
 
     fun onModelsReloaded() {
-        // Phase-2 hardcoded selection: prefer wine_fox_new_year to verify the renderer
-        // generalizes beyond the first model; fall back to whatever the registry has.
+        // Phase-3 hardcoded selection: test_steve has the simpler bone hierarchy (no fox
+        // mount, no decorative ribbons) so animation iteration is faster to interpret.
         // Phase 5 (GUI selector) replaces this with per-player capability storage.
-        val preferred = "wine_fox_new_year"
+        val preferred = "test_steve"
         activeModel = YSMModelManager.get(preferred) ?: YSMModelManager.all.firstOrNull()
         activeModel?.let { YSMMod.LOGGER.info("YSM active model = {}", it.id) }
     }
@@ -81,7 +81,12 @@ object YSMRenderBridge {
             val instanceId = player.id.toLong()
             val limbSwing = player.walkAnimation.position(partialTick)
             val limbSwingAmount = player.walkAnimation.speed(partialTick)
-            val isMoving = limbSwingAmount > 0.01f
+            // Use horizontal velocity rather than walkAnimation.speed for the moving check:
+            // walkAnimation.speed decays asymptotically and stays > 0 long after the player
+            // has actually stopped, leaving the controller stuck on WALK. Velocity goes to 0
+            // immediately when the player releases movement keys.
+            val velSqr = player.deltaMovement.horizontalDistanceSqr()
+            val isMoving = velSqr > 0.001 // ~0.03 blocks/tick, below normal walk speed
             val animationState = AnimationState<YSMPlayerAnimatable>(
                 animatable, limbSwing, limbSwingAmount, partialTick, isMoving
             )
