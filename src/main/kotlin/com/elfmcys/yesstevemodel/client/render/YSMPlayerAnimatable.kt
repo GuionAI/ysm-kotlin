@@ -71,10 +71,15 @@ object YSMPlayerAnimatable : SingletonGeoAnimatable {
      */
     private fun pickAnimation(isMoving: Boolean): RawAnimation {
         val player: AbstractClientPlayer = YSMRenderBridge.currentPlayer ?: return loop(IDLE_KEYS)
+        // In-water state takes priority over land states. We split active swim (horizontal
+        // pose) vs treading (vertical floating) on whether the player is moving — vanilla's
+        // strict `isSwimming()` requires sprint+W+looking down, which is too narrow for
+        // visual purposes; players expect a swim pose any time they're moving in water.
+        if (player.isFallFlying) return loop(FLY_KEYS)
+        if (player.isInWater && !player.onGround()) {
+            return if (isMoving || player.isSwimming) loop(SWIM_KEYS) else loop(SWIM_STAND_KEYS)
+        }
         return when {
-            player.isFallFlying -> loop(FLY_KEYS)
-            player.isSwimming -> loop(SWIM_KEYS)             // active horizontal swim
-            player.isInWater && !player.onGround() -> loop(SWIM_STAND_KEYS)  // treading water
             player.isShiftKeyDown -> loop(SNEAK_KEYS)
             !isMoving -> loop(IDLE_KEYS)
             !player.onGround() -> loop(JUMP_KEYS)

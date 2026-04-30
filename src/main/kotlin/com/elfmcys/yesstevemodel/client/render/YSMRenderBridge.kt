@@ -38,10 +38,11 @@ object YSMRenderBridge {
     fun shouldReplace(@Suppress("UNUSED_PARAMETER") player: AbstractClientPlayer): Boolean = activeModel != null
 
     fun onModelsReloaded() {
-        // Phase-3 hardcoded selection: wine_fox_new_year ships both `swim` (active horizontal
-        // swim) and `swim_stand` (treading water) keys; test_steve only has `swim_stand`.
+        // Phase-3 hardcoded selection: default_boy is a non-fox humanoid that ships both
+        // `swim` and `swim_stand` keys. Easier to read animation transitions on than the
+        // wine_fox model (which has a fox mount + lots of decorative bones).
         // Phase 5 (GUI selector) replaces this with per-player capability storage.
-        val preferred = "wine_fox_new_year"
+        val preferred = "default_boy"
         activeModel = YSMModelManager.get(preferred) ?: YSMModelManager.all.firstOrNull()
         activeModel?.let { YSMMod.LOGGER.info("YSM active model = {}", it.id) }
     }
