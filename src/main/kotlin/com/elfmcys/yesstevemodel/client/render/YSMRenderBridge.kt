@@ -23,6 +23,18 @@ object YSMRenderBridge {
     var activeModel: RegisteredModel? = null
         private set
 
+    /**
+     * The player currently being rendered, set immediately before [handleAnimations] runs.
+     * The animation controller's state handler reads this to decide which animation key
+     * to play (sneak vs walk vs fly etc.). Null between frames or for non-player entities.
+     *
+     * Render thread is single-threaded so this volatile is safe; we still null it out at
+     * the end of [renderGeo] so accidental cross-frame leaks are loud.
+     */
+    @Volatile
+    internal var currentPlayer: AbstractClientPlayer? = null
+        private set
+
     fun shouldReplace(@Suppress("UNUSED_PARAMETER") player: AbstractClientPlayer): Boolean = activeModel != null
 
     fun onModelsReloaded() {
@@ -42,7 +54,7 @@ object YSMRenderBridge {
      */
     fun renderGeo(
         player: AbstractClientPlayer,
-        vanillaModel: HumanoidModel<out LivingEntity>,
+        @Suppress("UNUSED_PARAMETER") vanillaModel: HumanoidModel<out LivingEntity>,
         partialTick: Float,
         poseStack: PoseStack,
         bufferSource: MultiBufferSource,
@@ -50,18 +62,35 @@ object YSMRenderBridge {
     ) {
         val animatable = YSMPlayerAnimatable
         val geoModel = YSMPlayerGeoRenderer.geoModel
-        val baked = geoModel.getBakedModel(geoModel.getModelResource(animatable)) ?: return
+        // Resolve the model up front so we can bail cleanly if the cache hasn't loaded it.
+        if (geoModel.getBakedModel(geoModel.getModelResource(animatable)) == null) return
 
-        // 1. Animation handling — keep AnimationState alive even with no controllers, so
-        //    GeckoLib's molang queries tick.
-        val instanceId = player.id.toLong()
-        val animationState = AnimationState<YSMPlayerAnimatable>(animatable, 0f, 0f, partialTick, false)
-        geoModel.handleAnimations(animatable, instanceId, animationState)
+        // 1. Animation handling.
+        //
+        // Phase 3 path: GeckoLib's animation engine drives bone poses by playing an
+        // animation keyed by the controller (idle/walk/run/sneak/etc.). The previous
+        // bone-mirror approach (copying vanilla HumanoidModel.ModelPart rotations onto
+        // bedrock GeoBones) is disabled — it had cosmetic axis bugs (R6 in decisions/04)
+        // and its primary value (TACZ/SlashBlade compat) is recovered later in Phase 6.
+        //
+        // limbSwing/limbSwingAmount come from the player's WalkAnimationState; isMoving
+        // = limbSwingAmount > tiny threshold. The controller reads the player from
+        // [currentPlayer] (stashed below) to decide which key to play.
+        currentPlayer = player
+        try {
+            val instanceId = player.id.toLong()
+            val limbSwing = player.walkAnimation.position(partialTick)
+            val limbSwingAmount = player.walkAnimation.speed(partialTick)
+            val isMoving = limbSwingAmount > 0.01f
+            val animationState = AnimationState<YSMPlayerAnimatable>(
+                animatable, limbSwing, limbSwingAmount, partialTick, isMoving
+            )
+            geoModel.handleAnimations(animatable, instanceId, animationState)
+        } finally {
+            currentPlayer = null
+        }
 
-        // 2. Bone mirror — pose state from vanilla HumanoidModel flows through.
-        HumanoidBoneMirror.apply(vanillaModel, baked)
-
-        // 3. Render.
+        // 2. Render.
         //
         // Vanilla LivingEntityRenderer applied scale(-1,-1,1) + translate(0,-1.5,0) before
         // model.renderToBuffer (the call we redirect). That's right for vanilla
