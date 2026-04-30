@@ -50,6 +50,9 @@ object YSMPlayerAnimatable : SingletonGeoAnimatable {
     private val SWIM_KEYS = arrayOf("swim", "swim_stand")
     private val SWIM_STAND_KEYS = arrayOf("swim_stand", "swim")
     private val FLY_KEYS = arrayOf("elytra_fly", "fly")
+    /** Played briefly while [LivingEntity.swinging] is true — left-click attack. YSM
+     *  authors typically name this `attacked` (past-tense convention); some use `attack`. */
+    private val ATTACK_KEYS = arrayOf("attacked", "attack", "swing")
 
     override fun registerControllers(controllers: AnimatableManager.ControllerRegistrar) {
         controllers.add(
@@ -76,10 +79,12 @@ object YSMPlayerAnimatable : SingletonGeoAnimatable {
      */
     private fun pickAnimation(isMoving: Boolean): RawAnimation {
         val player: AbstractClientPlayer = YSMRenderBridge.currentPlayer ?: return loop(IDLE_KEYS)
-        // In-water state takes priority over land states. We split active swim (horizontal
-        // pose) vs treading (vertical floating) on whether the player is moving — vanilla's
-        // strict `isSwimming()` requires sprint+W+looking down, which is too narrow for
-        // visual purposes; players expect a swim pose any time they're moving in water.
+        // Attack overrides everything — while swinging is true (~6 ticks per swing), the
+        // arm-swing animation plays. As soon as the swing ends it falls back to whatever
+        // the movement state would normally be. Single-controller architecture means we
+        // can't OVERLAY attack on walk/run; we just substitute the whole pose for ~6 ticks.
+        // Phase 6 may add a second controller for proper additive overlay.
+        if (player.swinging) return loop(ATTACK_KEYS)
         if (player.isFallFlying) return loop(FLY_KEYS)
         if (player.isInWater && !player.onGround()) {
             return if (isMoving || player.isSwimming) loop(SWIM_KEYS) else loop(SWIM_STAND_KEYS)
